@@ -66,6 +66,10 @@ static CAPDU_CHAINING capdu_chaining = {
 };
 static RAPDU_CHAINING rapdu_chaining = {
     .rapdu.data = chaining_buffer,
+#ifdef ENABLE_RAPDU_CHAINING_PRODUCER
+    .producer = NULL,
+    .producer_state = NULL,
+#endif
 };
 
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {
@@ -141,18 +145,47 @@ restart:
 }
 
 int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
+  /* If buffered data is fully sent, try to pull the next chunk from producer. */
+  if (ex->sent >= ex->rapdu.len) {
+#ifdef ENABLE_RAPDU_CHAINING_PRODUCER
+    if (ex->producer) {
+      int produced = ex->producer(ex->rapdu.data, APDU_BUFFER_SIZE, ex->producer_state);
+      if (produced > 0) {
+        ex->rapdu.len = (uint16_t)produced;
+        ex->sent = 0;
+      } else {
+        /* producer returned 0 — done */
+        ex->producer = NULL;
+      }
+    }
+#endif
+    if (ex->sent >= ex->rapdu.len) {
+      /* No more data, no producer — just report status word. */
+      sh->len = 0;
+      sh->sw = ex->rapdu.sw;
+      return 0;
+    }
+  }
+
+  /* Deliver as much as fits in the response buffer. */
   uint16_t to_send = ex->rapdu.len - ex->sent;
   if (to_send > sh->len) to_send = sh->len;
   memcpy(sh->data, ex->rapdu.data + ex->sent, to_send);
   sh->len = to_send;
   ex->sent += to_send;
   if (ex->sent < ex->rapdu.len) {
-    if (ex->rapdu.len - ex->sent > 0xFF)
-      sh->sw = 0x61FF;
+    /* More data remains — signal with 61xx so host sends GET RESPONSE. */
+    uint16_t remaining = ex->rapdu.len - ex->sent;
+    sh->sw = 0x6100 + (remaining > 0xFF ? 0xFF : remaining);
+  } else {
+    /* This chunk is fully sent. */
+#ifdef ENABLE_RAPDU_CHAINING_PRODUCER
+    if (ex->producer)
+      sh->sw = 0x61FF; /* producer may have more; host should GET RESPONSE */
     else
-      sh->sw = 0x6100 + (ex->rapdu.len - ex->sent);
-  } else
-    sh->sw = ex->rapdu.sw;
+#endif
+      sh->sw = ex->rapdu.sw;
+  }
   return 0;
 }
 
@@ -193,6 +226,10 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
       return;
     }
     rapdu_chaining.sent = 0;
+#ifdef ENABLE_RAPDU_CHAINING_PRODUCER
+    rapdu_chaining.producer = NULL;
+    rapdu_chaining.producer_state = NULL;
+#endif
     if (CLA == 0x00 && INS == 0xA4 && P1 == 0x04 && P2 == 0x00) {
       uint8_t i, end = APPLET_ENUM_END;
       for (i = APPLET_NULL + 1; i != end; ++i) {

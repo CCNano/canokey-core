@@ -74,9 +74,20 @@ typedef struct {
   uint8_t in_chaining;
 } CAPDU_CHAINING;
 
+#ifdef ENABLE_RAPDU_CHAINING_PRODUCER
+// Producer callback: writes a chunk into buf, returns bytes written.
+// Called by apdu_output when the initial RAPDU buffer is exhausted.
+// Returns 0 when no more data (producer is done).
+typedef int (*rapdu_producer_t)(uint8_t *buf, size_t buf_size, void *state);
+#endif
+
 typedef struct {
   RAPDU rapdu;
   uint16_t sent;
+#ifdef ENABLE_RAPDU_CHAINING_PRODUCER
+  rapdu_producer_t producer; // +4B (ARM32): called by apdu_output when buffer exhausted
+  void *producer_state;      // +4B: opaque state passed to producer callback
+#endif
 } RAPDU_CHAINING;
 
 extern uint8_t *global_buffer;

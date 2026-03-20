@@ -10,12 +10,16 @@ option(
     "Skip all user-presence test (USE AT YOUR OWN RISK)"
     OFF
 )
+option(ENABLE_PQC "Enable Post-Quantum Cryptography (ML-DSA)" OFF)
 option(VIRTCARD "Virt Card" OFF)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -fno-omit-frame-pointer")
 
+if(ENABLE_PQC)
+    add_definitions(-DENABLE_PQC -DENABLE_RAPDU_CHAINING_PRODUCER)
+endif(ENABLE_PQC)
 if(ENABLE_DEBUG_OUTPUT)
     add_definitions(-DDEBUG_OUTPUT)
 endif(ENABLE_DEBUG_OUTPUT)
@@ -34,13 +38,13 @@ endif(ENABLE_DUMB_DONGLE)
 
 add_subdirectory(canokey-crypto EXCLUDE_FROM_ALL)
 
-# tinycbor: build sources directly instead of add_subdirectory.
-# tinycbor 7.0's CMakeLists.txt declares project(... LANGUAGES C CXX), which
-# triggers CXX compiler detection. On ARM cross-compilation the CXX test
-# program fails to link against the scatter file (L6236E: no RESET section).
-# Avoid this by not using tinycbor's own CMake build system.
+#tinycbor : build sources directly instead of add_subdirectory.
+#tinycbor 7.0's CMakeLists.txt declares project(... LANGUAGES C CXX), which
+#triggers CXX compiler detection.On ARM cross - compilation the CXX test
+#program fails to link against the scatter file(L6236E : no RESET section).
+#Avoid this by not using tinycbor's own CMake build system.
 set(TINYCBOR_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tinycbor)
-# Generate the two headers that tinycbor 7.0's cbor.h expects
+#Generate the two headers that tinycbor 7.0's cbor.h expects
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/tinycbor/tinycbor-export.h
     "#ifndef CBOR_API\n#define CBOR_API\n#endif\n")
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/tinycbor/tinycbor-version.h
@@ -50,8 +54,8 @@ if(DEFINED PRODUCT_NAME)
     add_definitions(-DUSBD_PRODUCT_STRING="${PRODUCT_NAME}")
 endif()
 
-# Generate pre-encoded CBOR segments for ctap_get_info.
-# Constants are parsed directly from headers — no duplication.
+#Generate pre - encoded CBOR segments for ctap_get_info.
+#Constants are parsed directly from headers — no duplication.
 find_program(PYTHON_EXE NAMES python3 python REQUIRED)
 add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/ctap_get_info_cbor.inc
